@@ -1,0 +1,14 @@
+# R temp files
+.Rhistory
+.Ruserdata
+*.RData
+*.RDataTmp
+*.Rproj
+
+# macOS
+__MACOSX/
+.DS_Store
+
+# R plots (auto-generated)
+Rplots.pdf
+Rplot*.png

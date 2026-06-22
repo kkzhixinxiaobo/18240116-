@@ -1,0 +1,20 @@
+\begin{table*}[hbt]
+\ifnextchar[{\eatarg}{}
+
+
+\caption{\label{tab:desc-table}Table 1. Mean reaction times (ms) by face type and illness recency.}
+\centering
+\begin{tabular}[t]{l|l|r|r|r}
+\hline
+face\_type & recent\_cold & n & mean & sd\\
+\hline
+disfigured & recent & 151 & 669.3 & 209.4\\
+\hline
+disfigured & not recent & 251 & 629.5 & 157.5\\
+\hline
+typical & recent & 151 & 653.6 & 184.5\\
+\hline
+typical & not recent & 251 & 622.0 & 148.5\\
+\hline
+\end{tabular}
+\end{table*}

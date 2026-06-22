@@ -1,0 +1,1095 @@
+---
+title             : "Preregistered Direct Replication of \"Sick Body, Vigilant Mind\""
+shorttitle        : "SBVM Replication"
+
+author:
+  - name          : "沈钰涵"
+    affiliation   : "1"
+    corresponding : yes
+    address       : "南京师范大学心理学院"
+    email         : "3574425102@qq.com"
+
+affiliation:
+  - id            : "1"
+    institution   : "Nanjing Normal University, School of Psychology"
+
+authornote: |
+  Preregistered direct replication of Miller & Maner (2011).
+
+abstract: |
+  Full analysis pipeline for the preregistered direct replication study.
+
+keywords          : "behavioral immune system, attentional bias, dot-probe, replication"
+wordcount         : "X"
+
+bibliography      : ["r-references.bib", "study_ref.bib"]
+
+floatsintext      : no
+linenumbers       : yes
+draft             : no
+mask              : no
+
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+
+classoption       : "man"
+output:
+  papaja::apa6_pdf:
+    latex_engine: xelatex
+    pandoc_args:
+      - "-V CJKmainfont=SimSun"
+      - "-V CJKsansfont=SimHei"
+      - "-V CJKmonofont=SimSun"
+---
+
+```{r setup, include = FALSE}
+# ============================================
+# 全局设置
+# ============================================
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+setwd("D:/18240116syh")
+
+# 加载核心包
+library(readr)
+library(dplyr)
+library(TOSTER)       # 等价检验
+library(knitr)        # 表格输出
+library(haven)        # 读取SPSS .sav文件
+library(afex)         # SPSS风格ANOVA（同时加载lme4/lmerTest）
+library(tidyverse)    # 数据处理与可视化
+library(psych)        # Cronbach's alpha 和相关分析
+
+theme_set(theme_minimal(base_size = 12))
+```
+
+# Custom Functions {#custom-functions}
+
+```{r custom-functions}
+# ============================================
+# 自定义辅助函数
+# ============================================
+
+# APA格式p值报告（去除前导0）
+rround <- function(x, digits = 3, val = "p", remove0 = TRUE) {
+  if (val == "p" & x[1] < .001) return("p < .001")
+
+  x <- round(x, digits)
+  if (val != "") {
+    val <- paste0(sub("%", "%%", val), " = ")
+  }
+  if (length(x) == 2) {
+    txt <- paste0(val, "[%.", digits, "f, %.", digits, "f]") %>%
+      sprintf(x[[1]], x[[2]])
+  } else {
+    txt <- paste0(val, "%.", digits, "f") %>%
+      sprintf(x)
+  }
+
+  if (remove0) {
+    gsub("0\\.", ".", txt)
+  } else {
+    txt
+  }
+}
+
+# t值转效应量r
+t2r <- function(tt, ci = FALSE) {
+  if (ci) {
+    t <- tt$conf.int / tt$stderr
+  } else {
+    t <- tt$statistic
+  }
+  df <- tt$parameter
+  r <- sqrt(t^2 / (t^2 + df))
+
+  # 添加正负号
+  ifelse(t > 0, r, -r)
+}
+
+# ANOVA效应量置信区间
+anova_CI <- function(F.value, df.1, df.2, conf.level = .95, digits = 3) {
+  ci <- apaTables::get.ci.partial.eta.squared(
+    F.value, df.1, df.2, conf.level)
+
+  rround(c(ci$LL, ci$UL), digits, "90% CI", FALSE)
+}
+
+# APA格式ANOVA统计报告
+report_F <- function(anova_obj, the_term) {
+  suppressWarnings(broom::tidy(anova_obj)) %>%
+    filter(term == the_term) %>%
+    mutate(F = round(statistic, 2) %>% sprintf("%.2f", .),
+           p = rround(p.value, 3),
+           es = round(pes, 3) %>% sprintf("%.3f", .),
+           ci = anova_CI(statistic, num.Df, den.Df, .95),
+           txt = paste0("F(", num.Df, ", ", den.Df, ") = ", F,
+                         ", $\\eta_{p}^{2}$ ",
+                         ifelse(pes < .001, "< .001", paste0("= ", es)),
+                         ", ", ci, ", ", p)
+    ) %>% pull(txt)
+}
+```
+
+# Methods
+
+## Data Loading
+
+### 实验数据读取（三个站点）
+
+```{r load-data-vu, include = FALSE}
+# ============================================
+# VU站点（E-Prime .dat文件）
+# ============================================
+colspec <- cols(
+  response = col_double(),
+  .default = col_guess()
+)
+
+safe_read <- function(file) {
+  tryCatch({
+    read_tsv(file, col_types = colspec, show_col_types = FALSE)
+  }, error = function(e) {
+    warning("文件读取失败:", file)
+    return(NULL)
+  })
+}
+
+data.vu <- list.files(
+  path = "rawdata/rawdata/VU",
+  pattern = "dat$",
+  recursive = TRUE,
+  full.names = TRUE
+) %>%
+  lapply(read_tsv, col_types = colspec, show_col_types = FALSE) %>%
+  bind_rows() %>%
+  filter(subject != 9999) %>%  # 排除测试运行
+  select(subject:stimulusitem5) %>%
+  mutate(site = "VU")
+```
+
+```{r load-data-gl, include = FALSE}
+# ============================================
+# Glasgow站点（Inquisit .iqdat文件）
+# ============================================
+data.gl <- list.files(path = "rawdata/rawdata/Glasgow",
+                      pattern = "iqdat$", recursive = TRUE,
+                      full.names = TRUE) %>%
+  lapply(read_tsv, col_types = colspec, show_col_types = FALSE) %>%
+  bind_rows() %>%
+  select(subject:stimulusitem5) %>%
+  mutate(site = "GL")
+```
+
+```{r load-data-mi, include = FALSE}
+# ============================================
+# Michigan站点（Inquisit .iqdat文件，在Replication Study Data/子目录）
+# ============================================
+colspec <- cols(response = col_double(), .default = col_guess())
+
+mi.excl <- c(9999, 999, 333, 90909, 9994, 999914,
+             999913, 999911, 99998, 999910, 99996, 99999)
+
+data.mi <- list.files(path = "rawdata/rawdata/Michigan",
+                      pattern = "iqdat$", recursive = TRUE,
+                      full.names = TRUE) %>%
+  lapply(read_tsv, col_type = colspec) %>%
+  bind_rows() %>%
+  filter(!(subject %in% mi.excl)) %>%
+  select(subject:stimulusitem5) %>%
+  mutate(site = "MI")
+```
+
+### 合并原始数据
+
+```{r merge-raw, include = FALSE}
+# 合并三个站点
+dat.raw <- bind_rows(data.vu, data.gl, data.mi)
+
+# 试次水平清洗
+trials <- dat.raw %>%
+  mutate(
+    stim_id = str_replace(stimulusitem3, ".bmp", ""),
+    target = str_replace(stimulusitem5, ".bmp", "")
+  ) %>%
+  select(-(stimulusitem1:stimulusitem5)) %>%
+  filter(blockcode != "practice") %>%
+  separate(trialcode, c("real", "position", "trial_type", "block")) %>%
+  separate(stim_id, c("w", "face_sex", "face_type", "face_n"), sep = c(1, 2, 3), remove = F) %>%
+  select(-real, -w, -face_n) %>%
+  mutate( # circle = 18, square = 23
+    correct = case_when(
+      target == "circle" & response == 18 ~ 1,
+      target == "square" & response == 23 ~ 1,
+      TRUE ~ 0
+    ),
+    face_type = recode(face_type, "d" = "disfigured", "n" = "typical")
+  ) %>%
+  rename(rt = latency, user_id = subject)
+```
+
+### 问卷数据读取
+
+```{r load-questionnaire, include = FALSE}
+# ============================================
+# 三个站点的Qualtrics问卷数据
+# ============================================
+
+raters.vu <- haven::read_sav("rawdata/rawdata/VU/VU Dot Probe Qualtrics.sav") %>%
+  mutate(site = "VU")
+# 修正录入笔误：被试编号334应为534
+raters.vu$PID[raters.vu$PID == 334] <- 534
+
+raters.gl <- haven::read_sav("rawdata/rawdata/Glasgow/Glasgow Dot Probe Qualtrics.sav") %>%
+  mutate(site = "GL")
+
+raters.mi <- read_sav("rawdata/rawdata/Michigan/Dot Probe Questionnaire - MICHIGAN_September 30, 2019_09.17.sav") %>%
+  mutate(site = "MI") %>%
+  filter(PID != 9999) # 排除测试运行
+
+### PVD子量表标签查看
+column_labels <- purrr::map(raters.vu, ~attr(., 'label'))
+
+pvd <- column_labels[17:31] %>%
+  purrr::map(~str_replace(., "How strongly do you agree or disagree with the following statement\\?\\s*", ""))
+
+tibble(
+  "column name" = names(pvd),
+  "subscale" = c(1, 2, 1, 1, 2, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1) %>%
+    recode("1" = "germ aversion", "2" = "perceived infectability"),
+  "question" = pvd
+) %>%
+  knitr::kable()
+```
+
+### 问卷数据合并与变量重编码
+
+```{r process-raters, include = FALSE}
+# 注意：不对反向题做重新编码，使用原始问卷数据
+raters <- bind_rows(raters.vu, raters.gl, raters.mi) %>%
+  mutate(
+    sex = NA_character_,
+    age = NA_real_
+  ) %>%
+  select(
+    site, sex, age,
+    user_id = PID,
+    recent_cold = DH1,
+    recency_1 = DH2,
+    recency_2 = DH3,
+    recency_3 = DH4,
+    recency_4 = DH5,
+    PVDpi_1 = PVD2,
+    PVDpi_2 = PVD5R,
+    PVDpi_3 = PVD6,
+    PVDpi_4 = PVD8,
+    PVDpi_5 = PVD10,
+    PVDpi_6 = PVD12R,
+    PVDpi_7 = PVD14R,
+    PVDga_1 = PVD1,
+    PVDga_2 = PVD3R,
+    PVDga_3 = PVD4,
+    PVDga_4 = PVD7,
+    PVDga_5 = PVD9,
+    PVDga_6 = PVD11R,
+    PVDga_7 = PVD13R,
+    PVDga_8 = PVD15,
+    pd_1 = DS1,
+    pd_2 = DS2,
+    pd_3 = DS3,
+    pd_4 = DS4,
+    pd_5 = DS5,
+    pd_6 = DS6,
+    pd_7 = DS7,
+    img_1 = A1b___yellow_stuff,
+    img_2 = A2b_sickface,
+    img_3 = A3b_Crowded_train,
+    img_4 = A4b_Yellow_red_towel,
+    img_5 = A5b_wound,
+    img_6 = A6b_worms,
+    img_7 = A7b_mite,
+    O1R:H10R,
+    WFD1:WMN10
+  ) %>%
+  rename(WFD10 = WFD10___rating) %>%
+  mutate(user_id = as.numeric(user_id))
+```
+
+### PVD题目相关矩阵
+
+```{r pvd-correlation, echo = TRUE}
+# PVD题目层面相关热图
+raters %>%
+  select(PVDpi_1:PVDga_8) %>%
+  cor() %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "V1") %>%
+  gather("V2", "r", PVDpi_1:PVDga_8) %>%
+  mutate(V2 = factor(V2),
+         V2 = factor(V2, levels = rev(levels(V2)))) %>%
+  ggplot(aes(V1, V2, fill = r)) +
+  geom_tile(color = "grey") +
+  scale_fill_viridis_c() +
+  scale_x_discrete(position = "top") +
+  labs(x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0))
+```
+
+### 计算量表维度分
+
+```{r compute-scores, include = FALSE}
+# 各量表聚合为维度得分
+raters_scores <- raters %>%
+  mutate(
+    recent_cold = case_when(
+      recent_cold %in% 1:3 ~ "recent",
+      recent_cold %in% 4:7 ~ "not recent"
+    )
+  ) %>%
+  gather(var, score, recency_1:WMN10) %>%
+  mutate(var = str_replace(var, "WFD", "WFD_0"),
+         var = str_replace(var, "WMD", "WMD_0"),
+         var = str_replace(var, "WFN", "WFN_0"),
+         var = str_replace(var, "WMN", "WMN_0"),
+         var = str_replace(var, "(H|E|X|A|C|O)", "hexaco.\\1_0"),
+         var = str_replace(var, "_010", "_10"),
+         var = str_replace(var, "R$", "")
+  ) %>%
+  separate(var, c("var", "var_n"), sep = "_") %>%
+  group_by(user_id, sex, age, recent_cold, var) %>%
+  summarise(score = mean(score)) %>%
+  ungroup() %>%
+  spread(var, score)
+```
+
+### 维度分相关矩阵
+
+```{r score-correlation, echo = TRUE}
+raters_scores %>%
+  select(hexaco.A:WMN) %>%
+  cor() %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "V1") %>%
+  gather("V2", "r", hexaco.A:WMN) %>%
+  mutate(V2 = factor(V2),
+         V2 = factor(V2, levels = rev(levels(V2)))) %>%
+  ggplot(aes(V1, V2, fill = r)) +
+  geom_tile(color = "grey") +
+  geom_text(aes(label = round(r, 2)), color = "white") +
+  scale_fill_viridis_c() +
+  scale_x_discrete(position = "top") +
+  labs(x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0))
+```
+
+## Data Preprocessing
+
+### 试次排除与数据合并
+
+```{r exclusions, include = FALSE}
+# 基于正确试次、不一致条件和3SD排除
+trials_inc <- trials %>%
+  filter(correct == 1, trial_type == "diff") %>%
+  group_by(user_id) %>%
+  mutate(mean_rt = mean(rt),
+         sd_rt = sd(rt),
+         n_correct = n()) %>%
+  filter(rt <= mean_rt + 3 * sd_rt, rt >= mean_rt - 3 * sd_rt) %>%
+  ungroup() %>%
+  group_by() %>%
+  filter(n_correct >= mean(n_correct) - 3 * sd(n_correct)) %>%
+  ungroup()
+
+# 对纳入被试的问卷得分进行中心化和标准化
+raters_inc <- raters_scores %>%
+  semi_join(trials_inc, by = "user_id") %>%
+  mutate(
+    recent_cold = as.factor(recent_cold),
+    recency.z = (recency - mean(recency)) / sd(recency),
+    PVDga.z = (PVDga - mean(PVDga)) / sd(PVDga),
+    PVDpi.z = (PVDpi - mean(PVDpi)) / sd(PVDpi),
+    img.z = (img - mean(img)) / sd(img),
+    pd.z = (pd - mean(pd)) / sd(pd)
+  )
+
+# 最终聚合数据：试次RT合并问卷得分
+data_agg <- trials_inc %>%
+  group_by(user_id, face_type, site) %>%
+  summarise(rt = mean(rt)) %>%
+  ungroup() %>%
+  left_join(raters_inc, by = "user_id") %>%
+  filter(!is.na(recent_cold)) %>%
+  mutate(recent_cold = factor(recent_cold, levels = c("recent", "not recent")))
+```
+
+### 保存聚合数据
+
+```{r save-aggregated, include = FALSE}
+write_csv(data_agg, "SBVM_data_aggregated.csv")
+```
+
+# Results
+
+## 被试排除情况
+
+```{r participant-flow, echo = TRUE}
+all.raters <- raters %>%
+  full_join(trials, by = "user_id",
+            suffix = c(".quest", ".exp"))
+
+pre_excl <- all.raters %>%
+  summarise(n = n_distinct(user_id)) %>%
+  pull(n)
+
+n_per_site <- all.raters %>%
+  mutate(site = ifelse(is.na(site.quest), site.exp, site.quest)) %>%
+  group_by(site) %>%
+  summarise(n = n_distinct(user_id))
+
+pre_excl_gl <- filter(n_per_site, site == "GL") %>% pull(n)
+pre_excl_mi <- filter(n_per_site, site == "MI") %>% pull(n)
+pre_excl_vu <- filter(n_per_site, site == "VU") %>% pull(n)
+
+error.excl <- trials %>%
+  anti_join(trials_inc, by = "user_id") %>%
+  group_by(user_id) %>%
+  count(user_id)
+
+excl_error <- nrow(error.excl)
+
+raters.excl <- all.raters %>%
+  anti_join(data_agg, by = "user_id") %>%
+  anti_join(error.excl, by = "user_id")
+
+excl_missing <- raters.excl %>%
+  summarise(n = n_distinct(user_id)) %>%
+  pull(n)
+
+post_excl <- data_agg %>%
+  summarise(n = n_distinct(user_id)) %>%
+  pull(n)
+
+post_excl_ill <- data_agg %>%
+  filter(recent_cold == "recent") %>%
+  summarise(n = n_distinct(user_id)) %>%
+  pull(n)
+
+post_excl_not <- data_agg %>%
+  filter(recent_cold == "not recent") %>%
+  summarise(n = n_distinct(user_id)) %>%
+  pull(n)
+
+cat("Pre-exclusion participants:", pre_excl, "\n")
+cat("Per site:", n_per_site$site, n_per_site$n, "\n")
+cat("Excluded (extreme RT):", excl_error, "\n")
+cat("Excluded (missing questionnaire):", excl_missing, "\n")
+cat("Final N:", post_excl,
+    "(recent illness:", post_excl_ill,
+    "healthy:", post_excl_not, ")\n")
+```
+
+## 量表信度
+
+```{r reliability, echo = TRUE}
+alpha.pi <- select(raters, PVDpi_1:PVDpi_7) %>% alpha()
+alpha.ga <- select(raters, PVDga_1:PVDga_8) %>% alpha()
+alpha.img <- select(raters, img_1:img_7) %>% alpha()
+alpha.pd <- select(raters, pd_1:pd_7) %>% alpha()
+
+a.pi <- round(alpha.pi$total$std.alpha, 2)
+a.ga <- round(alpha.ga$total$std.alpha, 2)
+a.img <- round(alpha.img$total$std.alpha, 2)
+a.pd <- round(alpha.pd$total$std.alpha, 2)
+
+cat("PVD Perceived Infectability α =", a.pi, "\n")
+cat("PVD Germ Aversion α =", a.ga, "\n")
+cat("Image Disgust α =", a.img, "\n")
+cat("Pathogen Disgust α =", a.pd, "\n")
+```
+
+## 面孔类型间RT相关
+
+```{r face-correlation, echo = TRUE}
+wide_data <- data_agg %>%
+  select(user_id, face_type, rt) %>%
+  group_by(user_id, face_type) %>%
+  summarise(rt = mean(rt), .groups = "drop") %>%
+  spread(face_type, rt)
+
+facetype.cor <- cor.test(~ disfigured + typical, data = wide_data)
+
+print(facetype.cor)
+```
+
+## 各条件包含试次数
+
+```{r trial-counts, echo = TRUE}
+trials_inc %>%
+  semi_join(raters, by = "user_id") %>%
+  group_by(user_id, face_type) %>%
+  summarise(included_trials = n()) %>%
+  ungroup() %>%
+  group_by(face_type) %>%
+  summarise(n = n(),
+            mean = mean(included_trials),
+            min = min(included_trials),
+            max = max(included_trials)
+  ) %>%
+  mutate_if(is.numeric, round, 2)
+```
+
+## 描述性统计
+
+```{r desc-plots, echo = TRUE}
+# 反应时密度图
+trials_inc %>%
+  ggplot(aes(rt, color = face_type, group = stim_id)) +
+  geom_density() +
+  scale_color_manual(values = c("#CC0000", "#006699"), name = "Face Type") +
+  theme_minimal()
+
+# 问卷得分密度图
+raters_scores %>%
+  gather(variable, score, recency, PVDga, PVDpi) %>%
+  ggplot(aes(score, color = variable)) +
+  geom_density()
+```
+
+```{r desc-table, echo = TRUE}
+# 面孔类型 × 近期生病 描述统计
+ix_desc <- data_agg %>%
+  group_by(face_type, recent_cold) %>%
+  summarise(n = n(),
+            mean = mean(rt),
+            sd = sd(rt)
+  ) %>%
+  ungroup() %>%
+  mutate_if(is.numeric, round, 3)
+ix_desc
+
+# 面孔类型描述统计
+ft_desc <- data_agg %>%
+  group_by(face_type) %>%
+  summarise(n = n(),
+            mean = mean(rt),
+            sd = sd(rt)
+  ) %>%
+  ungroup() %>%
+  mutate_if(is.numeric, round, 3)
+ft_desc
+
+# 近期生病描述统计
+ir_desc <- data_agg %>%
+  group_by(recent_cold) %>%
+  summarise(n = n() / 2,
+            mean = mean(rt),
+            sd = sd(rt)
+  ) %>%
+  ungroup() %>%
+  mutate_if(is.numeric, round, 3)
+ir_desc
+```
+
+### 交互作用小提琴图
+
+```{r fig-violin, echo = TRUE, fig.width = 8, fig.height = 6}
+ggplot(data_agg, aes(recent_cold, rt, color = face_type)) +
+  geom_violin(aes(fill = face_type), alpha = 0.25) +
+  stat_summary(geom = "errorbar", width = 0.1,
+               position = position_dodge(width = 0.9),
+               show.legend = F) +
+  stat_summary(geom = "point", fun = "mean", size = 1,
+               position = position_dodge(width = 0.9),
+               show.legend = F) +
+  labs(x = "Illness Recency",
+       y = "Mean RT on Incongruent-Location Trials") +
+  scale_x_discrete(labels = c("Not Recent", "Recent")) +
+  scale_y_continuous(breaks = seq(300, 1800, 300), limits = c(300, 1800)) +
+  scale_color_manual(values = c("#CC0000", "#006699"),
+                     name = "Face Type",
+                     labels = c("Disfigured", "Typical")) +
+  scale_fill_manual(values = c("#CC0000", "#006699"),
+                    guide = F) +
+  theme_minimal()
+```
+
+```{r save-fig1, include = FALSE}
+ggsave("SBVM_fig1.png", width = 8, height = 6, dpi = 300)
+```
+
+## 描述统计与相关矩阵表
+
+```{r desc-cor-table, echo = TRUE}
+tabledat <- spread(data_agg, face_type, rt) %>%
+  mutate(latency_diff = disfigured - typical,
+         recency_cat = recode(recent_cold,
+                               "recent" = 1,
+                               "not recent" = 0)) %>%
+
+  select("Illness recency (discrete)" = recency_cat,
+         "Illness recency (continuous)" = recency,
+         "Latencies (difference)" = latency_diff,
+         "Latencies (disfigured)" = disfigured,
+         "Latencies (typical)" = typical,
+         "Pathogen disgust" = pd,
+         "Disgust toward images" = img,
+         "Germ Aversion" = PVDga,
+         "Perceived Infectability" = PVDpi)
+
+means <- summarise_all(tabledat, mean) %>% t() %>%
+  as_tibble(rownames = "A") %>%
+  rename(Mean = V1)
+sds <- summarise_all(tabledat, sd) %>% t() %>%
+  as_tibble(rownames = "A") %>%
+  rename(SD = V1)
+
+rhos <- cor(tabledat)
+cortable <- rhos
+corci <- psych::cor.ci(rhos, n = nrow(tabledat), plot = FALSE)
+cortable[upper.tri(rhos)] <- rround(rhos[upper.tri(rhos)], 2, "")
+cis <- map2(corci$ci$lower, corci$ci$upper, ~rround(c(.x, .y), 2, "")) %>% unlist()
+cortable[lower.tri(cortable)] <- cis
+diag(cortable) <- "--"
+
+cortable <- cortable %>% as_tibble(rownames = "A")
+names(cortable) <- c("A", 1:9)
+
+# 计算二分变量（近期生病）与各连续变量的点二列相关
+disc_r <- c()
+disc_ci <- c()
+for (i in 2:9) {
+  ird <- tabledat %>% pull(1)
+  contvar <- tabledat %>% pull(i)
+  tt <- t.test(contvar[ird == 1], contvar[ird == 0])
+
+  disc_r <- c(disc_r, t2r(tt))
+  disc_ci <- c(disc_ci, t2r(tt, ci = TRUE) %>% rround(2, ""))
+}
+
+cortable[1, 3:10] <- rround(disc_r, 2, "") %>% as.list()
+cortable[2:9, 2] <- disc_ci
+
+descriptives <- left_join(means, sds, by = "A") %>%
+  left_join(cortable, by = "A") %>%
+  mutate_if(is.numeric, round, 2) %>%
+  mutate(A = paste0(row_number(), ". ", A)) %>%
+  rename("  " = A)
+
+kable(descriptives,
+      caption = paste0("*Table 1* Means, standard deviations, and correlations ",
+                       "between study variables. Pearson correlations appear ",
+                       "above the diagonal, and 95% confidence intervals appear ",
+                       "below the diagonal. Point-biserial correlations derived ",
+                       "from t-values are reported between the dichotomous ",
+                       "illness recency variable and other variables."),
+      align = "lrrrrrrrrrrr")
+```
+
+## 主分析：混合方差分析
+
+### 分类自变量（recent_cold）
+
+```{r anova-categorical, echo = TRUE}
+cat_ANOVA <- aov_4(rt ~ recent_cold * face_type +
+                     (1 + face_type | user_id),
+                   data = data_agg, factorize = FALSE)
+
+a1a <- anova(cat_ANOVA, es = "pes", MSE = FALSE) %>% print()
+```
+
+```{r anova-cat-followup, echo = TRUE}
+# 近期生病组：畸形 vs 正常面孔
+recent_ill <- filter(data_agg, recent_cold == "recent")
+rt_dis <- filter(recent_ill, face_type == "disfigured")$rt
+rt_typ <- filter(recent_ill, face_type == "typical")$rt
+a1b <- t.test(rt_dis, rt_typ, paired = TRUE)
+a1b_stats <- sprintf("M = %.2f ms, %s, %s",
+                     a1b$estimate,
+                     rround(a1b$conf.int, 2, "95% CI", FALSE),
+                     rround(a1b$p.value, 3, "p"))
+a1b
+
+# 健康组：畸形 vs 正常面孔
+not_recent_ill <- filter(data_agg, recent_cold == "not recent")
+rt_dis_healthy <- filter(not_recent_ill, face_type == "disfigured")$rt
+rt_typ_healthy <- filter(not_recent_ill, face_type == "typical")$rt
+a1c <- t.test(x = rt_dis_healthy, y = rt_typ_healthy, paired = TRUE)
+a1c_stats <- sprintf("M = %.2f ms, %s, %s",
+                     a1c$estimate,
+                     rround(a1c$conf.int, 2, "95% CI", FALSE),
+                     rround(a1c$p.value, 3, "p"))
+a1c
+
+# 提取描述统计用于行文报告
+ft_dis <- ft_desc %>% filter(face_type == "disfigured") %>%
+  select(mean, sd) %>% mutate_all(round)
+ft_norm <- ft_desc %>% filter(face_type == "typical") %>%
+  select(mean, sd) %>% mutate_all(round)
+ir_rec <- ir_desc %>% filter(recent_cold == "recent") %>%
+  select(mean, sd) %>% mutate_all(round)
+ir_not <- ir_desc %>% filter(recent_cold == "not recent") %>%
+  select(mean, sd) %>% mutate_all(round)
+```
+
+```{r anova-cat-report, echo = TRUE}
+# APA格式报告
+rc_stats <- report_F(a1a, "recent_cold")
+ft_stats <- report_F(a1a, "face_type")
+ix_stats <- report_F(a1a, "recent_cold:face_type")
+
+cat("Main effect of recent_cold:", rc_stats, "\n")
+cat("Main effect of face_type:", ft_stats, "\n")
+cat("Interaction:", ix_stats, "\n")
+```
+
+### 连续自变量（recency.z）
+
+```{r anova-continuous, echo = TRUE}
+cont_ANOVA <- aov_4(rt ~ recency.z * face_type +
+                     (1 + face_type | user_id),
+                   data = data_agg, factorize = FALSE)
+
+a1a_cont <- anova(cont_ANOVA, es = "pes", MSE = FALSE) %>% print()
+
+irc_stats <- report_F(a1a_cont, "recency.z")
+ftc_stats <- report_F(a1a_cont, "face_type")
+ixc_stats <- report_F(a1a_cont, "recency.z:face_type")
+
+cat("Main effect of recency.z:", irc_stats, "\n")
+cat("Main effect of face_type:", ftc_stats, "\n")
+cat("Interaction:", ixc_stats, "\n")
+```
+
+## 等价检验（TOST）
+
+```{r equivalence, echo = TRUE}
+stats_cat <- data_agg %>%
+  spread(face_type, rt, convert = T) %>%
+  mutate(dv = disfigured - typical) %>%
+  group_by(recent_cold) %>%
+  summarise(n = n(),
+            m = mean(dv),
+            sd = sd(dv)
+  )
+
+n1 <- stats_cat %>% filter(recent_cold == "not recent") %>% pull(n)
+n2 <- stats_cat %>% filter(recent_cold == "recent") %>% pull(n)
+m1 <- stats_cat %>% filter(recent_cold == "not recent") %>% pull(m)
+m2 <- stats_cat %>% filter(recent_cold == "recent") %>% pull(m)
+sd1 <- stats_cat %>% filter(recent_cold == "not recent") %>% pull(sd)
+sd2 <- stats_cat %>% filter(recent_cold == "recent") %>% pull(sd)
+low_eqbound_d <- -.35
+high_eqbound_d <- .35
+
+mytost <- TOSTtwo(m1, m2, sd1, sd2, n1, n2, low_eqbound_d, high_eqbound_d)
+
+# NHST t-test 对比
+nhst <- data_agg %>%
+  spread(face_type, rt, convert = T) %>%
+  mutate(dv = disfigured - typical) %>%
+  t.test(dv ~ recent_cold, .)
+
+nhst_null <- sprintf("t(%.1f) = %.2f, %s",
+                     round(nhst$parameter, 1),
+                     round(nhst$statistic, 2),
+                     rround(nhst$p.value, 3))
+
+# Cohen's dz 效应量
+sdpooled <- sqrt((sd1^2 + sd2^2) / 2)
+dz <- round((m1 - m2) / sdpooled, 2)
+
+ci <- sprintf("[%.2f - %.2f]",
+              round(mytost$LL_CI_TOST / sdpooled, 2),
+              round(mytost$UL_CI_TOST / sdpooled, 2))
+
+lb <- sprintf("t(%.1f) = %.2f, %s",
+              round(mytost$TOST_df, 1),
+              round(mytost$TOST_t1, 2),
+              rround(mytost$TOST_p1, 3))
+
+ub <- sprintf("t(%.1f) = %.2f, %s",
+              round(mytost$TOST_df, 1),
+              round(mytost$TOST_t2, 2),
+              rround(mytost$TOST_p2, 3))
+
+cat("NHST:", nhst_null, "\n")
+cat("Cohen's dz:", dz, "\n")
+cat("TOST lower bound:", lb, "\n")
+cat("TOST upper bound:", ub, "\n")
+cat("90% CI dz:", ci, "\n")
+```
+
+## 近期生病与问卷变量的关系
+
+```{r illness-questionnaire, echo = TRUE}
+data_agg_wide <- spread(data_agg, face_type, rt)
+
+# 近期生病状态与各问卷维度的t检验
+a2a <- t.test(data_agg_wide$PVDpi ~ data_agg_wide$recent_cold) %>% print()
+a2b <- t.test(data_agg_wide$PVDga ~ data_agg_wide$recent_cold) %>% print()
+a2c <- t.test(data_agg_wide$pd ~ data_agg_wide$recent_cold) %>% print()
+a2d <- t.test(data_agg_wide$img ~ data_agg_wide$recent_cold) %>% print()
+
+# APA格式报告
+ill_pi <- sprintf("t(%.1f) = %.2f, %s",
+                  round(a2a$parameter, 1), round(a2a$statistic, 2),
+                  rround(a2a$p.value, 3))
+ill_ga <- sprintf("t(%.1f) = %.2f, %s",
+                  round(a2b$parameter, 1), round(a2b$statistic, 2),
+                  rround(a2b$p.value, 3))
+ill_pd <- sprintf("t(%.1f) = %.2f, %s",
+                  round(a2c$parameter, 1), round(a2c$statistic, 2),
+                  rround(a2c$p.value, 3))
+ill_img <- sprintf("t(%.1f) = %.2f, %s",
+                   round(a2d$parameter, 1), round(a2d$statistic, 2),
+                   rround(a2d$p.value, 3))
+
+# 效应量r
+rill_pi <- sprintf("%s, %s, %s",
+                   rround(t2r(a2a), 2, "r"),
+                   rround(t2r(a2a, ci = TRUE), 2, "CI"),
+                   rround(a2a$p.value, 3))
+rill_ga <- sprintf("%s, %s, %s",
+                   rround(t2r(a2b), 2, "r"),
+                   rround(t2r(a2b, ci = TRUE), 2, "CI"),
+                   rround(a2b$p.value, 3))
+rill_pd <- sprintf("%s, %s, %s",
+                   rround(t2r(a2c), 2, "r"),
+                   rround(t2r(a2c, ci = TRUE), 2, "CI"),
+                   rround(a2c$p.value, 3))
+rill_img <- sprintf("%s, %s, %s",
+                    rround(t2r(a2d), 2, "r"),
+                    rround(t2r(a2d, ci = TRUE), 2, "CI"),
+                    rround(a2d$p.value, 3))
+
+cat("PVDpi t-test:", ill_pi, "\n")
+cat("PVDga t-test:", ill_ga, "\n")
+cat("PD t-test:", ill_pd, "\n")
+cat("IMG t-test:", ill_img, "\n")
+```
+
+## 连续健康指标与问卷的相关
+
+```{r cont-cor, echo = TRUE}
+a3a <- cor.test(data_agg_wide$recency.z, data_agg_wide$PVDpi.z) %>% print()
+a3b <- cor.test(data_agg_wide$recency.z, data_agg_wide$PVDga.z) %>% print()
+a3c <- cor.test(data_agg_wide$recency.z, data_agg_wide$pd.z) %>% print()
+a3d <- cor.test(data_agg_wide$recency.z, data_agg_wide$img.z) %>% print()
+
+cill_pi <- sprintf("%s, %s, %s",
+                   rround(a3a$estimate, 2, "r"),
+                   rround(a3a$conf.int, 2, "CI"),
+                   rround(a3a$p.value, 3))
+cill_ga <- sprintf("%s, %s, %s",
+                    rround(a3b$estimate, 2, "r"),
+                    rround(a3b$conf.int, 2, "CI"),
+                    rround(a3b$p.value, 3))
+cill_pd <- sprintf("%s, %s, %s",
+                    rround(a3c$estimate, 2, "r"),
+                    rround(a3c$conf.int, 2, "CI"),
+                    rround(a3c$p.value, 3))
+cill_img <- sprintf("%s, %s, %s",
+                     rround(a3d$estimate, 2, "r"),
+                     rround(a3d$conf.int, 2, "CI"),
+                     rround(a3d$p.value, 3))
+
+cat("recency × PVDpi:", cill_pi, "\n")
+cat("recency × PVDga:", cill_ga, "\n")
+cat("recency × PD:", cill_pd, "\n")
+cat("recency × IMG:", cill_img, "\n")
+```
+
+# Exploratory Analyses
+
+## Winsorizing（替换法处理极端值）
+
+```{r winsorizing, echo = TRUE}
+trials_w <- trials %>%
+  filter(correct == 1, trial_type == "diff") %>%
+  group_by(user_id) %>%
+  mutate(mean_rt = mean(rt),
+         sd_rt = sd(rt),
+         n_correct = n()) %>%
+  ungroup() %>%
+  # 将极端RT替换为均值±3SD（而非直接排除）
+  mutate(
+    rt = case_when(
+      rt > mean_rt + 3 * sd_rt ~ mean_rt + 3 * sd_rt,
+      rt < mean_rt - 3 * sd_rt ~ mean_rt - 3 * sd_rt,
+      TRUE ~ rt
+    )
+  ) %>%
+  group_by() %>%
+  filter(n_correct >= mean(n_correct) - 3 * sd(n_correct)) %>%
+  ungroup()
+
+# 重新计算标准化得分
+raters_w <- raters_scores %>%
+  semi_join(trials_w, by = "user_id") %>%
+  mutate(
+    recent_cold = as.factor(recent_cold),
+    recency.z = (recency - mean(recency)) / sd(recency),
+    PVDga.z = (PVDga - mean(PVDga)) / sd(PVDga),
+    PVDpi.z = (PVDpi - mean(PVDpi)) / sd(PVDpi),
+    img.z = (img - mean(img)) / sd(img),
+    pd.z = (pd - mean(pd)) / sd(pd)
+  )
+
+data_agg_w <- trials_w %>%
+  group_by(user_id, face_type, site) %>%
+  summarise(rt = mean(rt)) %>%
+  ungroup() %>%
+  left_join(raters_w, by = "user_id") %>%
+  filter(!is.na(recent_cold))
+
+# 替换法ANOVA
+cat_ANOVA_w <- aov_4(rt ~ recent_cold * face_type +
+                      (1 + face_type | user_id),
+                    data = data_agg_w, factorize = FALSE)
+cat("Winsorizing — Categorical ANOVA:\n")
+anova(cat_ANOVA_w, es = "pes", MSE = FALSE)
+
+cont_ANOVA_w <- aov_4(rt ~ recency.z * face_type +
+                       (1 + face_type | user_id),
+                     data = data_agg_w, factorize = FALSE)
+cat("\nWinsorizing — Continuous ANOVA:\n")
+anova(cont_ANOVA_w, es = "pes", MSE = FALSE)
+```
+
+## ANCOVA（控制典型面孔RT）
+
+```{r ancova, echo = TRUE}
+cat_ANCOVA <- aov_4(disfigured ~ typical + recent_cold +
+                     (1 | user_id),
+                   data = data_agg_wide, factorize = FALSE)
+anc <- anova(cat_ANCOVA, es = "pes", MSE = FALSE) %>% print()
+
+rc <- anc[2, ]
+cat_stats <- sprintf("F(%.0f, %.0f) = %.2f, %s",
+                     rc$`num Df`, rc$`den Df`,
+                     round(rc$F, 2),
+                     rround(rc$`Pr(>F)`, 3))
+cat("Categorical ANCOVA:", cat_stats, "\n")
+
+# 连续自变量ANCOVA
+cont_ANCOVA <- aov_4(disfigured ~ typical + recency.z +
+                      (1 | user_id),
+                    data = data_agg_wide, factorize = FALSE)
+canc <- anova(cont_ANCOVA, es = "pes", MSE = FALSE) %>% print()
+
+crc <- canc[2, ]
+cont_stats <- sprintf("F(%.0f, %.0f) = %.2f, %s",
+                      crc$`num Df`, crc$`den Df`,
+                      round(crc$F, 2),
+                      rround(crc$`Pr(>F)`, 3))
+cat("Continuous ANCOVA:", cont_stats, "\n")
+```
+
+## 各站点单独分析
+
+```{r by-site, echo = TRUE}
+site_analysis <- function(site_name) {
+  cat("\n=====", site_name, "=====\n")
+  cat("Categorical ANOVA:\n")
+  print(anova(
+    aov_4(rt ~ recent_cold * face_type + (1 + face_type | user_id),
+          data = filter(data_agg, site == site_name), factorize = FALSE),
+    es = "pes", MSE = FALSE
+  ))
+  cat("Continuous ANOVA:\n")
+  print(anova(
+    aov_4(rt ~ recency.z * face_type + (1 + face_type | user_id),
+          data = filter(data_agg, site == site_name), factorize = FALSE),
+    es = "pes", MSE = FALSE
+  ))
+}
+
+site_analysis("MI")
+site_analysis("VU")
+site_analysis("GL")
+```
+
+## 混合效应模型
+
+```{r mixed-models, echo = TRUE}
+data_all <- trials_inc %>%
+  left_join(raters_inc, by = "user_id") %>%
+  filter(!is.na(recent_cold)) %>%
+  mutate(recent_cold.e = recode(recent_cold,
+                                "not recent" = -0.5,
+                                "recent" = 0.5),
+         face_type.e = recode(face_type,
+                              "disfigured" = -0.5,
+                              "typical" = 0.5)
+  )
+
+# 分类变量模型，含站点/被试/刺激随机截距
+lmer_cat <- lmer(rt ~ recent_cold.e * face_type.e +
+                   (1 | site) +
+                   (1 | user_id) +
+                   (1 | stim_id),
+                 data = data_all)
+cat("Mixed Model — Categorical:\n")
+summary(lmer_cat)
+
+# 连续变量模型
+lmer_cont <- lmer(rt ~ recency.z * face_type.e +
+                   (1 | site) +
+                   (1 | user_id) +
+                   (1 | stim_id),
+                 data = data_all)
+cat("\nMixed Model — Continuous:\n")
+summary(lmer_cont)
+```
+
+## HEXACO人格维度分析
+
+```{r hexaco, echo = TRUE}
+hexaco <- purrr::map_df(c("H", "E", "X", "A", "C", "O"), function(l) {
+  var <- paste0("hexaco.", l)
+  t.test(data_agg_wide[[var]] ~ data_agg_wide$recent_cold) %>%
+    broom::tidy() %>%
+    mutate(hexaco = l)
+}) %>%
+  select(hexaco, estimate1:parameter) %>%
+  mutate(r = t2r(list(statistic = statistic, parameter = parameter))) %>%
+  mutate_if(is.numeric, signif, 3) %>%
+  mutate(statistic = -statistic,  # 翻转t检验顺序符号
+         r = round(r, 2)) %>%
+  rename(t = statistic,
+         p = p.value,
+         df = parameter,
+         "not recent" = estimate1,
+         "recent" = estimate2)
+
+kable(hexaco,
+      caption = "*Table X* Illness recency effects on the six HEXACO factors")
+```
+
+# Output
+
+```{r save-output, include = FALSE}
+# 保存分析结果和清洗后数据
+library(writexl)
+library(broom)
+
+write_csv(data_agg_w, "D:/18240116syh/final_analysis_data.csv")
+write_xlsx(data_agg_w, "D:/18240116syh/final_analysis_data.xlsx")
+write_csv(trials_w, "D:/18240116syh/cleaned_trials.csv")
+write_csv(raters_w, "D:/18240116syh/cleaned_questionnaire.csv")
+write_csv(tidy(a2a), "D:/18240116syh/t_test_PVDpi.csv")
+write_csv(tidy(a2b), "D:/18240116syh/t_test_PVDga.csv")
+write_csv(tidy(a1a), "D:/18240116syh/anova_results.csv")
+write_csv(tidy(a1a_cont), "D:/18240116syh/anova_continuous_results.csv")
+write_csv(as.data.frame(mytost$TOST), "D:/18240116syh/tost_equivalence_result.csv")
+write_csv(tidy(ft_dis), "D:/18240116syh/desc_ft_dis.csv")
+write_csv(tidy(ft_norm), "D:/18240116syh/desc_ft_norm.csv")
+write_csv(tidy(ir_rec), "D:/18240116syh/desc_ir_rec.csv")
+write_csv(tidy(ir_not), "D:/18240116syh/desc_ir_not.csv")
+save.image("D:/18240116syh/FULL_WORKSPACE.RData")
+```
+
+# References
+
+::: {#refs custom-style="Bibliography"}
+:::

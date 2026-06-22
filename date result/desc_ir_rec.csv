@@ -1,0 +1,3 @@
+column,n,mean,sd,median,trimmed,mad,min,max,range,skew,kurtosis,se
+mean,1,661,NA,661,661,0,661,661,0,NA,NA,NA
+sd,1,197,NA,197,197,0,197,197,0,NA,NA,NA

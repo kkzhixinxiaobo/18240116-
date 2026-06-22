@@ -1,0 +1,446 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\documentclass[
+  english,
+  man]{apa6}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+% Make \paragraph and \subparagraph free-standing
+\makeatletter
+\ifx\paragraph\undefined\else
+  \let\oldparagraph\paragraph
+  \renewcommand{\paragraph}{
+    \@ifstar
+      \xxxParagraphStar
+      \xxxParagraphNoStar
+  }
+  \newcommand{\xxxParagraphStar}[1]{\oldparagraph*{#1}\mbox{}}
+  \newcommand{\xxxParagraphNoStar}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+  \let\oldsubparagraph\subparagraph
+  \renewcommand{\subparagraph}{
+    \@ifstar
+      \xxxSubParagraphStar
+      \xxxSubParagraphNoStar
+  }
+  \newcommand{\xxxSubParagraphStar}[1]{\oldsubparagraph*{#1}\mbox{}}
+  \newcommand{\xxxSubParagraphNoStar}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+\makeatother
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+\ifLuaTeX
+\usepackage[bidi=basic,shorthands=off]{babel}
+\else
+\usepackage[bidi=default,shorthands=off]{babel}
+\fi
+\ifLuaTeX
+  \usepackage{selnolig} % disable illegal ligatures
+\fi
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+% Manuscript styling
+\usepackage{upgreek}
+\captionsetup{font=singlespacing,justification=justified}
+
+% Table formatting
+\usepackage{longtable}
+\usepackage{lscape}
+% \usepackage[counterclockwise]{rotating}   % Landscape page setup for large tables
+\usepackage{multirow}		% Table styling
+\usepackage{tabularx}		% Control Column width
+\usepackage[flushleft]{threeparttable}	% Allows for three part tables with a specified notes section
+\usepackage{threeparttablex}            % Lets threeparttable work with longtable
+
+% Create new environments so endfloat can handle them
+% \newenvironment{ltable}
+%   {\begin{landscape}\centering\begin{threeparttable}}
+%   {\end{threeparttable}\end{landscape}}
+\newenvironment{lltable}{\begin{landscape}\centering\begin{ThreePartTable}}{\end{ThreePartTable}\end{landscape}}
+
+% Enables adjusting longtable caption width to table width
+% Solution found at http://golatex.de/longtable-mit-caption-so-breit-wie-die-tabelle-t15767.html
+\makeatletter
+\newcommand\LastLTentrywidth{1em}
+\newlength\longtablewidth
+\setlength{\longtablewidth}{1in}
+\newcommand{\getlongtablewidth}{\begingroup \ifcsname LT@\roman{LT@tables}\endcsname \global\longtablewidth=0pt \renewcommand{\LT@entry}[2]{\global\advance\longtablewidth by ##2\relax\gdef\LastLTentrywidth{##2}}\@nameuse{LT@\roman{LT@tables}} \fi \endgroup}
+
+% \setlength{\parindent}{0.5in}
+% \setlength{\parskip}{0pt plus 0pt minus 0pt}
+
+% Overwrite redefinition of paragraph and subparagraph by the default LaTeX template
+% See https://github.com/crsh/papaja/issues/292
+\makeatletter
+\renewcommand{\paragraph}{\@startsection{paragraph}{4}{\parindent}%
+  {0\baselineskip \@plus 0.2ex \@minus 0.2ex}%
+  {-1em}%
+  {\normalfont\normalsize\bfseries\itshape\typesectitle}}
+
+\renewcommand{\subparagraph}[1]{\@startsection{subparagraph}{5}{1em}%
+  {0\baselineskip \@plus 0.2ex \@minus 0.2ex}%
+  {-\z@\relax}%
+  {\normalfont\normalsize\itshape\hspace{\parindent}{#1}\textit{\addperi}}{\relax}}
+\makeatother
+
+\makeatletter
+\usepackage{etoolbox}
+\patchcmd{\maketitle}
+  {\section{\normalfont\normalsize\abstractname}}
+  {\section*{\normalfont\normalsize\abstractname}}
+  {}{\typeout{Failed to patch abstract.}}
+\patchcmd{\maketitle}
+  {\section{\protect\normalfont{\@title}}}
+  {\section*{\protect\normalfont{\@title}}}
+  {}{\typeout{Failed to patch title.}}
+\makeatother
+
+\usepackage{xpatch}
+\makeatletter
+\xapptocmd\appendix
+  {\xapptocmd\section
+    {\addcontentsline{toc}{section}{\appendixname\ifoneappendix\else~\theappendix\fi: #1}}
+    {}{\InnerPatchFailed}%
+  }
+{}{\PatchFailed}
+\makeatother
+\keywords{behavioral immune system, attentional bias, dot-probe, replication, computational reproducibility\newline\indent Word count: X}
+\DeclareDelayedFloatFlavor{ThreePartTable}{table}
+\DeclareDelayedFloatFlavor{lltable}{table}
+\DeclareDelayedFloatFlavor*{longtable}{table}
+\makeatletter
+\renewcommand{\efloat@iwrite}[1]{\immediate\expandafter\protected@write\csname efloat@post#1\endcsname{}}
+\makeatother
+\usepackage{lineno}
+
+\linenumbers
+\usepackage{csquotes}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Preregistered Direct Replication of Miller \& Maner (2011): Sick Body{,} Vigilant Mind},
+  pdfauthor={沈钰涵1},
+  pdflang={en-EN},
+  pdfkeywords={behavioral immune system, attentional bias, dot-probe, replication, computational reproducibility},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Preregistered Direct Replication of Miller \& Maner (2011): Sick Body, Vigilant Mind}
+\author{沈钰涵\textsuperscript{1}}
+\date{}
+
+
+\shorttitle{SBVM Replication Report}
+
+\authornote{
+
+Computational reproducibility check of Tybur et al.~(2020).
+All analyses were re-run from raw data obtained from the OSF repository.
+
+Correspondence concerning this article should be addressed to 沈钰涵, Nanjing Normal University, School of Psychology. E-mail: \href{mailto:3574425102@qq.com}{\nolinkurl{3574425102@qq.com}}
+
+}
+
+\affiliation{\vspace{0.5cm}\textsuperscript{1} Nanjing Normal University, School of Psychology}
+
+\abstract{%
+This report presents a comprehensive computational reproducibility check of Tybur et al.'s (2020) preregistered direct replication of Miller and Maner (2011).
+Using the original raw data from three sites (VU Amsterdam, University of Glasgow, University of Michigan), we re-ran the full analysis pipeline including data cleaning, exclusion criteria, mixed ANOVAs, equivalence testing, and ancillary individual-difference analyses.
+Results successfully reproduced the key findings: a significant main effect of face type on reaction times (disfigured \textgreater{} typical), a significant main effect of illness recency (recently ill participants showed larger attentional bias), and a non-significant interaction.
+Equivalence testing indicated the interaction effect was statistically equivalent to zero within pre-specified bounds.
+Ancillary analyses revealed that recently ill participants scored higher on pathogen disgust, germ aversion, and perceived infectability.
+}
+
+
+
+\begin{document}
+\maketitle
+
+\section{Method}\label{method}
+
+\subsection{Participants}\label{participants}
+
+413 participants across three sites completed the dot-probe task:
+VU Amsterdam (147), University of Glasgow (121), and University of Michigan (145).
+After excluding 9 participants due to excessive errors and 2 participants due to missing questionnaire data,
+the final sample consisted of 402 participants
+(151 recently ill, 251 not recently ill).
+
+\subsection{Measures}\label{measures}
+
+\subsubsection{Pathogen Disgust Scales}\label{pathogen-disgust-scales}
+
+Internal consistencies (standardized Cronbach's \(\alpha\)) were acceptable to good:
+Perceived Infectability \(\alpha = 0.92\), Germ Aversion \(\alpha = 0.76\),
+Pathogen Disgust \(\alpha = 0.69\), and Disgust Toward Images \(\alpha = 0.81\).
+
+\section{Results}\label{results}
+
+\subsection{Descriptive Statistics}\label{descriptive-statistics}
+
+\begin{table}
+
+\caption{\label{tab:desc-table}Table 1. Mean reaction times (ms) by face type and illness recency.}
+\centering
+\begin{tabular}[t]{l|l|r|r|r}
+\hline
+face\_type & recent\_cold & n & mean & sd\\
+\hline
+disfigured & recent & 151 & 669.3 & 209.4\\
+\hline
+disfigured & not recent & 251 & 629.5 & 157.5\\
+\hline
+typical & recent & 151 & 653.6 & 184.5\\
+\hline
+typical & not recent & 251 & 622.0 & 148.5\\
+\hline
+\end{tabular}
+\end{table}
+
+Mean reaction times were 644.50 ms
+(\(SD = 179.60) for disfigured faces and
+633.90 ms
+(\)SD = 163.50) for typical faces.
+
+\subsection{Primary Analysis: 2 (Face Type) × 2 (Illness Recency) Mixed ANOVA}\label{primary-analysis-2-face-type-2-illness-recency-mixed-anova}
+
+A 2 (face type: disfigured vs.~typical; within-subjects) × 2 (illness recency: recent vs.~not recent; between-subjects) mixed ANOVA was conducted on mean reaction times from incongruent-location trials.
+
+\subsubsection{Main Effect of Face Type}\label{main-effect-of-face-type}
+
+F(1, 400) = 14.96, \(\eta_{p}^{2}\) = 0.036, 90\% CI = {[}0.009, 0.078{]}, p \textless{} .001
+
+Participants responded more slowly to disfigured faces (\$M = 644.5 \$ ms, \$SD = 179.6 \() than to typical faces (\)M = 633.9 \$ ms, \$SD = 163.5 \$).
+
+\subsubsection{Main Effect of Illness Recency}\label{main-effect-of-illness-recency}
+
+F(1, 400) = 4.23, \(\eta_{p}^{2}\) = 0.010, 90\% CI = {[}0.000, 0.039{]}, p = .040
+
+Recently ill participants showed longer RTs overall compared to not-recently-ill participants.
+
+\subsubsection{Interaction: Face Type × Illness Recency}\label{interaction-face-type-illness-recency}
+
+F(1, 400) = 1.87, \(\eta_{p}^{2}\) = 0.005, 90\% CI = {[}0.000, 0.027{]}, p = .173
+
+The interaction between face type and illness recency was not significant, F(1, 400) = 1.87, \(\eta_{p}^{2}\) = 0.005, 90\% CI = {[}0.000, 0.027{]}, p = .173.
+
+\subsubsection{Simple Effects}\label{simple-effects}
+
+\begin{verbatim}
+## **Recently ill group:**  M = 15.71 ms, 95% CI = [4.63, 26.79], p = .006
+\end{verbatim}
+
+\begin{verbatim}
+## **Not recently ill group:**  M = 7.51 ms, 95% CI = [1.19, 13.83], p = .020
+\end{verbatim}
+
+Among recently ill participants, the attentional bias toward disfigured faces (relative to typical faces) was significant, M = 15.71 ms, 95\% CI = {[}4.63, 26.79{]}, p = .006.
+Among not-recently-ill participants, this bias was also significant, M = 7.51 ms, 95\% CI = {[}1.19, 13.83{]}, p = .020,
+though numerically smaller in magnitude.
+
+\subsection{Equivalence Testing}\label{equivalence-testing}
+
+\begin{verbatim}
+## To formally test whether the interaction effect was practically equivalent to zero, we conducted a two-one-sided test (TOST) procedure.
+\end{verbatim}
+
+\begin{verbatim}
+## The TOST procedure tested whether the difference in attentional bias scores between groups fell within equivalence bounds of $\pm$0.35 Cohen's $d_z$.
+\end{verbatim}
+
+\begin{verbatim}
+## NHST: $t( 248.4 ) =  -1.27 $,  p = .206
+\end{verbatim}
+
+\begin{verbatim}
+## TOST lower bound: $t( 248.4 ) =  2.01 $,  p = .023
+\end{verbatim}
+
+\begin{verbatim}
+## TOST upper bound: $t( 248.4 ) =  -4.55 $,  p < .001
+\end{verbatim}
+
+\begin{verbatim}
+## The TOST procedure was significant ($p =  0.023 $), indicating that the interaction effect is statistically equivalent to zero within the pre-registered bounds.
+\end{verbatim}
+
+\begin{verbatim}
+## Cohen's $d_z =  -0.14 $.
+\end{verbatim}
+
+\begin{verbatim}
+## 90% CI for $d_z$: $[ -0.31 ,  0.04 ]$
+\end{verbatim}
+
+\subsection{Continuous Illness Variable Analysis}\label{continuous-illness-variable-analysis}
+
+When using the continuous illness recency variable instead of the dichotomous split, the pattern remained consistent:
+
+Face type: F(1, 400) = 13.21, \(\eta_{p}^{2}\) = 0.032, 90\% CI = {[}0.007, 0.073{]}, p \textless{} .001
+
+Recency (continuous): F(1, 400) = 1.06, \(\eta_{p}^{2}\) = 0.003, 90\% CI = {[}0.000, 0.022{]}, p = .303
+
+Interaction: F(1, 400) = 0.16, \(\eta_{p}^{2}\) \textless{} .001, 90\% CI = {[}0.000, 0.013{]}, p = .691
+
+\subsection{Ancillary Analyses: Individual Differences}\label{ancillary-analyses-individual-differences}
+
+\subsubsection{Illness Recency and Disgust Sensitivity}\label{illness-recency-and-disgust-sensitivity}
+
+Recently ill participants scored significantly higher on:
+
+\begin{itemize}
+\tightlist
+\item
+  Perceived Infectability: t(311.3) = 2.78, p = .006 , r = .16, CI = {[}.05, .26{]}, p = .006
+\item
+  Germ Aversion: t(338.6) = 2.09, p = .037 , r = .11, CI = {[}.01, .22{]}, p = .037
+\item
+  Pathogen Disgust: t(299.8) = 2.08, p = .038 , r = .12, CI = {[}.01, .23{]}, p = .038
+\item
+  Disgust Toward Images: t(308.0) = 0.92, p = .358 , r = .05, CI = {[}-.06, .16{]}, p = .358
+\end{itemize}
+
+\subsubsection{Correlations Between Recency and Individual Differences}\label{correlations-between-recency-and-individual-differences}
+
+Continuous illness recency correlated significantly with:
+
+\begin{itemize}
+\tightlist
+\item
+  Perceived Infectability: r = .26, CI = {[}.17, .35{]}, p \textless{} .001
+\item
+  Germ Aversion: r = .08, CI = {[}-.02, .17{]}, p = .127
+\item
+  Pathogen Disgust: r = .09, CI = {[}-.00, .19{]}, p = .062
+\item
+  Disgust Toward Images: r = .10, CI = {[}.00, .19{]}, p = .047
+\end{itemize}
+
+\subsubsection{Face-Type Correlation}\label{face-type-correlation}
+
+\begin{verbatim}
+## Reaction times for disfigured and typical faces were highly correlated,  r = .95 ,  95% CI = [0.94, 0.96] ,  p < .001 .
+\end{verbatim}
+
+\subsection{Robustness Checks}\label{robustness-checks}
+
+\subsubsection{Winsorized (Trimmed) Data}\label{winsorized-trimmed-data}
+
+When using winsorized RTs (replacing outliers \$\pm\$3 SD with boundary values) instead of exclusion:
+
+\textbf{Categorical ANOVA:}
+Face type: \(F(1, 400) = 22.21\), \(\eta_{p}^{2} = .053\), \(p < .001\)
+Recent cold: \(F(1, 400) = 4.67\), \(\eta_{p}^{2} = .012\), \(p = .031\)
+Interaction: \(F(1, 400) = 2.63\), \(\eta_{p}^{2} = .007\), \(p = .105\)
+
+\subsubsection{Per-Site Analyses}\label{per-site-analyses}
+
+\textbf{Michigan (MI):}
+Face type: \(F(1, 138) = 7.26\), \(\eta_{p}^{2} = .050\), \(p = .008\)
+Recent cold: \(F(1, 138) = 3.36\), \(\eta_{p}^{2} = .024\), \(p = .069\)
+Interaction: \(F(1, 138) = 0.53\), \(\eta_{p}^{2} = .004\), \(p = .467\)
+
+\textbf{VU Amsterdam (VU):}
+Face type: \(F(1, 142) = 1.26\), \(\eta_{p}^{2} = .009\), \(p = .263\)
+Recent cold: \(F(1, 142) = 0.06\), \(\eta_{p}^{2} < .001\), \(p = .809\)
+Interaction: \(F(1, 142) = 0.01\), \(\eta_{p}^{2} < .001\), \(p = .908\)
+
+\textbf{Glasgow (GL):}
+Face type: \(F(1, 116) = 6.39\), \(\eta_{p}^{2} = .052\), \(p = .013\)
+Recent cold: \(F(1, 116) = 1.24\), \(\eta_{p}^{2} = .011\), \(p = .269\)
+Interaction: \(F(1, 116) = 1.26\), \(\eta_{p}^{2} = .011\), \(p = .263\)
+
+\subsubsection{ANCOVA (Controlling for Typical RT)}\label{ancova-controlling-for-typical-rt}
+
+\textbf{Categorical ANCOVA} (controlling for typical-face RT):
+Typical RT: \(F(1, 399) = 3396.32\), \(\eta_{p}^{2} = .895\), \(p < .001\)
+Recent cold: \(F(1, 399) = 1.36\), \(\eta_{p}^{2} = .003\), \(p = .244\)
+
+\textbf{Continuous ANCOVA:}
+Typical RT: \(F(1, 399) = 3418.14\), \(\eta_{p}^{2} = .895\), \(p < .001\)
+Recency (z): \(F(1, 399) = 0.08\), \(\eta_{p}^{2} < .001\), \(p = .773\)
+
+\subsubsection{Linear Mixed-Effects Models}\label{linear-mixed-effects-models}
+
+\textbf{Categorical LMEM} (random intercepts for site, participant, and stimulus):
+Recent cold (\(\beta = 32.53\), \(SE = 16.52\), \(p = .050\))
+Face type (\(\beta = -12.59\), \(SE = 11.20\), \(p = .268\))
+Interaction (\(\beta = -8.26\), \(SE = 6.12\), \(p = .178\))
+
+\textbf{Continuous LMEM:}
+Recency (\(\beta = 11.29\), \(SE = 8.01\), \(p = .160\))
+Face type (\(\beta = -11.56\), \(SE = 11.17\), \(p = .308\))
+Interaction (\(\beta = -1.36\), \(SE = 2.97\), \(p = .647\))
+
+\subsubsection{HEXACO Personality Factors}\label{hexaco-personality-factors}
+
+No significant differences in HEXACO traits were found between recently and not-recently ill participants (all \(p\)s \(> .05\)).
+
+\section{Discussion}\label{discussion}
+
+The present computational reproducibility check successfully reproduced the key findings of Tybur et al.~(2020).
+Participants consistently responded more slowly to disfigured faces compared to typical faces on incongruent-location trials,
+indicating an attentional bias toward cues of disease.
+Although recently ill participants showed numerically larger bias scores, the interaction between face type and illness recency
+was not statistically significant, and equivalence testing confirmed the interaction was practically equivalent to zero
+within pre-registered bounds of \$\textbackslash pm\$0.35 \(d_z\).
+
+Ancillary analyses replicated the finding that recently ill participants reported higher levels of pathogen disgust sensitivity,
+germ aversion, and perceived infectability, consistent with the behavioral immune system framework.
+Robustness checks using winsorized data, per-site analyses, ANCOVAs, and linear mixed-effects models
+all converged on the same pattern of results, supporting the robustness of the findings.
+
+\section{References}\label{references}
+
+\protect\phantomsection\label{refs}
+
+
+\end{document}

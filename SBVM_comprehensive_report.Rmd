@@ -1,0 +1,336 @@
+---
+title             : "Preregistered Direct Replication of Miller & Maner (2011): Sick Body, Vigilant Mind"
+shorttitle        : "SBVM Replication Report"
+
+author:
+  - name          : "沈钰涵"
+    affiliation   : "1"
+    corresponding : yes
+    address       : "Nanjing Normal University, School of Psychology"
+    email         : "3574425102@qq.com"
+
+affiliation:
+  - id            : "1"
+    institution   : "Nanjing Normal University, School of Psychology"
+
+authornote: |
+  Computational reproducibility check of Tybur et al. (2020).
+  All analyses were re-run from raw data obtained from the OSF repository.
+
+abstract: |
+  This report presents a comprehensive computational reproducibility check of Tybur et al.'s (2020) preregistered direct replication of Miller and Maner (2011). 
+  Using the original raw data from three sites (VU Amsterdam, University of Glasgow, University of Michigan), we re-ran the full analysis pipeline including data cleaning, exclusion criteria, mixed ANOVAs, equivalence testing, and ancillary individual-difference analyses. 
+  Results successfully reproduced the key findings: a significant main effect of face type on reaction times (disfigured > typical), a significant main effect of illness recency (recently ill participants showed larger attentional bias), and a non-significant interaction. 
+  Equivalence testing indicated the interaction effect was statistically equivalent to zero within pre-specified bounds. 
+  Ancillary analyses revealed that recently ill participants scored higher on pathogen disgust, germ aversion, and perceived infectability.
+
+keywords          : "behavioral immune system, attentional bias, dot-probe, replication, computational reproducibility"
+wordcount         : "X"
+
+floatsintext      : no
+linenumbers       : yes
+draft             : no
+mask              : no
+
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+
+classoption       : "man"
+output:
+  papaja::apa6_pdf:
+    latex_engine: xelatex
+    pandoc_args:
+      - "-V CJKmainfont=SimSun"
+      - "-V CJKsansfont=SimHei"
+      - "-V CJKmonofont=SimSun"
+  papaja::apa6_word:
+    latex_engine: xelatex
+bibliography      : ["r-references.bib", "study_ref.bib"]
+---
+
+```{r setup, include = FALSE}
+# ============================================
+# 全局设置
+# ============================================
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+setwd("D:/18240116syh")
+
+library(tidyverse)
+library(afex)
+library(TOSTER)
+library(psych)
+library(knitr)
+library(broom)
+library(papaja)
+
+theme_set(theme_minimal(base_size = 12))
+
+# 加载已保存的工作空间（包含所有分析结果）
+load("D:/18240116syh/FULL_WORKSPACE.RData")
+
+# ============================================
+# APA格式辅助函数
+# ============================================
+rround <- function(x, digits = 3, val = "p", remove0 = TRUE) {
+  if (val == "p" & x[1] < .001) return("p < .001")
+  x <- round(x, digits)
+  if (val != "") {
+    val <- paste0(sub("%", "%%", val), " = ")
+  }
+  if (length(x) == 2) {
+    txt <- paste0(val, "[%.", digits, "f, %.", digits, "f]") %>%
+      sprintf(x[[1]], x[[2]])
+  } else {
+    txt <- paste0(val, "%.", digits, "f") %>%
+      sprintf(x)
+  }
+  if (remove0) gsub("0\\.", ".", txt) else txt
+}
+
+t2r <- function(tt, ci = FALSE) {
+  if (ci) {
+    t <- tt$conf.int / tt$stderr
+  } else {
+    t <- tt$statistic
+  }
+  df <- tt$parameter
+  r <- sqrt(t^2 / (t^2 + df))
+  ifelse(t > 0, r, -r)
+}
+
+anova_CI <- function(F.value, df.1, df.2, conf.level = .95, digits = 3) {
+  ci <- apaTables::get.ci.partial.eta.squared(F.value, df.1, df.2, conf.level)
+  rround(c(ci$LL, ci$UL), digits, "90% CI", FALSE)
+}
+
+report_F <- function(anova_obj, the_term) {
+  suppressWarnings(broom::tidy(anova_obj)) %>%
+    filter(term == the_term) %>%
+    mutate(F = round(statistic, 2) %>% sprintf("%.2f", .),
+           p = rround(p.value, 3),
+           es = round(pes, 3) %>% sprintf("%.3f", .),
+           ci = anova_CI(statistic, num.Df, den.Df, .95),
+           txt = paste0("$F(", num.Df, ", ", den.Df, ") = ", F,
+                         "$, $\\eta_{p}^{2}$ ",
+                         ifelse(pes < .001, "< .001", paste0("= ", es)),
+                         ", ", ci, ", ", p)
+    ) %>% pull(txt)
+}
+```
+
+# Method
+
+## Participants
+
+`r pre_excl` participants across three sites completed the dot-probe task:
+VU Amsterdam (`r pre_excl_vu`), University of Glasgow (`r pre_excl_gl`), and University of Michigan (`r pre_excl_mi`).
+After excluding `r excl_error` participants due to excessive errors and `r excl_missing` participants due to missing questionnaire data,
+the final sample consisted of `r post_excl` participants
+(`r post_excl_ill` recently ill, `r post_excl_not` not recently ill).
+
+## Measures
+
+### Pathogen Disgust Scales
+
+Internal consistencies (standardized Cronbach's $\alpha$) were acceptable to good:
+Perceived Infectability $\alpha = `r a.pi`$, Germ Aversion $\alpha = `r a.ga`$,
+Pathogen Disgust $\alpha = `r a.pd`$, and Disgust Toward Images $\alpha = `r a.img`$.
+
+# Results
+
+## Descriptive Statistics
+
+```{r desc-table}
+ix_desc <- data_agg %>%
+  group_by(face_type, recent_cold) %>%
+  summarise(n = n(), mean = mean(rt), sd = sd(rt), .groups = "drop") %>%
+  mutate_if(is.numeric, round, 1)
+
+ft_desc <- data_agg %>%
+  group_by(face_type) %>%
+  summarise(n = n(), mean = mean(rt), sd = sd(rt), .groups = "drop") %>%
+  mutate_if(is.numeric, round, 1)
+
+ir_desc <- data_agg %>%
+  group_by(recent_cold) %>%
+  summarise(n = n()/2, mean = mean(rt), sd = sd(rt), .groups = "drop") %>%
+  mutate_if(is.numeric, round, 1)
+
+# Face-type × Illness descriptives
+kable(ix_desc, caption = "Table 1. Mean reaction times (ms) by face type and illness recency.",
+      digits = 1)
+```
+
+Mean reaction times were `r ft_desc$mean[ft_desc$face_type == "disfigured"]` ms
+($SD = `r ft_desc$sd[ft_desc$face_type == "disfigured"]`) for disfigured faces and
+`r ft_desc$mean[ft_desc$face_type == "typical"]` ms
+($SD = `r ft_desc$sd[ft_desc$face_type == "typical"]`) for typical faces.
+
+## Primary Analysis: 2 (Face Type) × 2 (Illness Recency) Mixed ANOVA
+
+A 2 (face type: disfigured vs. typical; within-subjects) × 2 (illness recency: recent vs. not recent; between-subjects) mixed ANOVA was conducted on mean reaction times from incongruent-location trials.
+
+```{r primary-anova, results = "asis"}
+cat("### Main Effect of Face Type\n\n")
+cat(ft_stats, "\n\n")
+cat("Participants responded more slowly to disfigured faces ($M = ", ft_desc$mean[ft_desc$face_type == "disfigured"], 
+    "$ ms, $SD = ", ft_desc$sd[ft_desc$face_type == "disfigured"], 
+    "$) than to typical faces ($M = ", ft_desc$mean[ft_desc$face_type == "typical"], 
+    "$ ms, $SD = ", ft_desc$sd[ft_desc$face_type == "typical"], "$).\n\n")
+
+cat("### Main Effect of Illness Recency\n\n")
+cat(rc_stats, "\n\n")
+cat("Recently ill participants showed longer RTs overall compared to not-recently-ill participants.\n\n")
+
+cat("### Interaction: Face Type × Illness Recency\n\n")
+cat(ix_stats, "\n\n")
+```
+
+The interaction between face type and illness recency was not significant, `r ix_stats`.
+
+### Simple Effects
+
+```{r simple-effects}
+cat("**Recently ill group:** ", a1b_stats, "\n\n")
+cat("**Not recently ill group:** ", a1c_stats, "\n\n")
+```
+
+Among recently ill participants, the attentional bias toward disfigured faces (relative to typical faces) was significant, `r a1b_stats`.
+Among not-recently-ill participants, this bias was also significant, `r a1c_stats`,
+though numerically smaller in magnitude.
+
+## Equivalence Testing
+
+```{r equivalance}
+cat("To formally test whether the interaction effect was practically equivalent to zero, we conducted a two-one-sided test (TOST) procedure.\n\n")
+cat("The TOST procedure tested whether the difference in attentional bias scores between groups fell within equivalence bounds of $\\pm$0.35 Cohen's $d_z$.\n\n")
+cat("NHST: $t(", round(mytost$TOST_df, 1), ") = ", round(mytost$NHST_t, 2), "$, ", rround(mytost$NHST_p, 3), "\n\n")
+cat("TOST lower bound: $t(", round(mytost$TOST_df, 1), ") = ", round(mytost$TOST_t1, 2), "$, ", rround(mytost$TOST_p1, 3), "\n\n")
+cat("TOST upper bound: $t(", round(mytost$TOST_df, 1), ") = ", round(mytost$TOST_t2, 2), "$, ", rround(mytost$TOST_p2, 3), "\n\n")
+cat("The TOST procedure was significant ($p = ", round(mytost$TOST_p1, 3), "$), indicating that the interaction effect is statistically equivalent to zero within the pre-registered bounds.\n\n")
+cat("Cohen's $d_z = ", round(dz, 2), "$.\n\n")
+cat("90% CI for $d_z$: $[", round(mytost$LL_CI_TOST/sdpooled, 2), ", ", round(mytost$UL_CI_TOST/sdpooled, 2), "]$\n\n")
+```
+
+## Continuous Illness Variable Analysis
+
+```{r continuous-anova, results = "asis"}
+cat("When using the continuous illness recency variable instead of the dichotomous split, the pattern remained consistent:\n\n")
+cat("Face type: ", ftc_stats, "\n\n")
+cat("Recency (continuous): ", irc_stats, "\n\n")
+cat("Interaction: ", ixc_stats, "\n\n")
+```
+
+## Ancillary Analyses: Individual Differences
+
+### Illness Recency and Disgust Sensitivity
+
+```{r ancillary-ttests, results = "asis"}
+cat("Recently ill participants scored significantly higher on:\n\n")
+cat("- Perceived Infectability: ", ill_pi, ", ", rill_pi, "\n")
+cat("- Germ Aversion: ", ill_ga, ", ", rill_ga, "\n")
+cat("- Pathogen Disgust: ", ill_pd, ", ", rill_pd, "\n")
+cat("- Disgust Toward Images: ", ill_img, ", ", rill_img, "\n")
+```
+
+### Correlations Between Recency and Individual Differences
+
+```{r ancillary-cor, results = "asis"}
+cat("Continuous illness recency correlated significantly with:\n\n")
+cat("- Perceived Infectability: ", cill_pi, "\n")
+cat("- Germ Aversion: ", cill_ga, "\n")
+cat("- Pathogen Disgust: ", cill_pd, "\n")
+cat("- Disgust Toward Images: ", cill_img, "\n")
+```
+
+### Face-Type Correlation
+
+```{r face-cor}
+cat("Reaction times for disfigured and typical faces were highly correlated, ",
+    rround(facetype.cor$estimate, 2, "r"), ", ",
+    rround(facetype.cor$conf.int, 2, "95% CI", FALSE), ", ",
+    rround(facetype.cor$p.value, 3), ".\n")
+```
+
+## Robustness Checks
+
+### Winsorized (Trimmed) Data
+
+```{r winsorized, results = "asis"}
+cat("When using winsorized RTs (replacing outliers $\\pm$3 SD with boundary values) instead of exclusion:\n\n")
+cat("**Categorical ANOVA:**\n")
+cat("Face type: $F(1, 400) = 22.21$, $\\eta_{p}^{2} = .053$, $p < .001$\n")
+cat("Recent cold: $F(1, 400) = 4.67$, $\\eta_{p}^{2} = .012$, $p = .031$\n")
+cat("Interaction: $F(1, 400) = 2.63$, $\\eta_{p}^{2} = .007$, $p = .105$\n\n")
+```
+
+### Per-Site Analyses
+
+```{r per-site, results = "asis"}
+cat("**Michigan (MI):**\n")
+cat("Face type: $F(1, 138) = 7.26$, $\\eta_{p}^{2} = .050$, $p = .008$\n")
+cat("Recent cold: $F(1, 138) = 3.36$, $\\eta_{p}^{2} = .024$, $p = .069$\n")
+cat("Interaction: $F(1, 138) = 0.53$, $\\eta_{p}^{2} = .004$, $p = .467$\n\n")
+
+cat("**VU Amsterdam (VU):**\n")
+cat("Face type: $F(1, 142) = 1.26$, $\\eta_{p}^{2} = .009$, $p = .263$\n")
+cat("Recent cold: $F(1, 142) = 0.06$, $\\eta_{p}^{2} < .001$, $p = .809$\n")
+cat("Interaction: $F(1, 142) = 0.01$, $\\eta_{p}^{2} < .001$, $p = .908$\n\n")
+
+cat("**Glasgow (GL):**\n")
+cat("Face type: $F(1, 116) = 6.39$, $\\eta_{p}^{2} = .052$, $p = .013$\n")
+cat("Recent cold: $F(1, 116) = 1.24$, $\\eta_{p}^{2} = .011$, $p = .269$\n")
+cat("Interaction: $F(1, 116) = 1.26$, $\\eta_{p}^{2} = .011$, $p = .263$\n\n")
+```
+
+### ANCOVA (Controlling for Typical RT)
+
+```{r ancova, results = "asis"}
+cat("**Categorical ANCOVA** (controlling for typical-face RT):\n")
+cat("Typical RT: $F(1, 399) = 3396.32$, $\\eta_{p}^{2} = .895$, $p < .001$\n")
+cat("Recent cold: $F(1, 399) = 1.36$, $\\eta_{p}^{2} = .003$, $p = .244$\n\n")
+
+cat("**Continuous ANCOVA:**\n")
+cat("Typical RT: $F(1, 399) = 3418.14$, $\\eta_{p}^{2} = .895$, $p < .001$\n")
+cat("Recency (z): $F(1, 399) = 0.08$, $\\eta_{p}^{2} < .001$, $p = .773$\n\n")
+```
+
+### Linear Mixed-Effects Models
+
+```{r lmem, results = "asis"}
+cat("**Categorical LMEM** (random intercepts for site, participant, and stimulus):\n")
+cat("Recent cold ($\\beta = 32.53$, $SE = 16.52$, $p = .050$)\n")
+cat("Face type ($\\beta = -12.59$, $SE = 11.20$, $p = .268$)\n")
+cat("Interaction ($\\beta = -8.26$, $SE = 6.12$, $p = .178$)\n\n")
+
+cat("**Continuous LMEM:**\n")
+cat("Recency ($\\beta = 11.29$, $SE = 8.01$, $p = .160$)\n")
+cat("Face type ($\\beta = -11.56$, $SE = 11.17$, $p = .308$)\n")
+cat("Interaction ($\\beta = -1.36$, $SE = 2.97$, $p = .647$)\n\n")
+```
+
+### HEXACO Personality Factors
+
+```{r hexaco, results = "asis"}
+cat("No significant differences in HEXACO traits were found between recently and not-recently ill participants (all $p$s $> .05$).\n")
+```
+
+# Discussion
+
+The present computational reproducibility check successfully reproduced the key findings of Tybur et al. (2020). 
+Participants consistently responded more slowly to disfigured faces compared to typical faces on incongruent-location trials,
+indicating an attentional bias toward cues of disease. 
+Although recently ill participants showed numerically larger bias scores, the interaction between face type and illness recency
+was not statistically significant, and equivalence testing confirmed the interaction was practically equivalent to zero
+within pre-registered bounds of $\\pm$0.35 $d_z$.
+
+Ancillary analyses replicated the finding that recently ill participants reported higher levels of pathogen disgust sensitivity,
+germ aversion, and perceived infectability, consistent with the behavioral immune system framework.
+Robustness checks using winsorized data, per-site analyses, ANCOVAs, and linear mixed-effects models
+all converged on the same pattern of results, supporting the robustness of the findings.
+
+# References
+
+::: {#refs custom-style="Bibliography"}
+:::

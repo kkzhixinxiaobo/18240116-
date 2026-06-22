@@ -1,0 +1,361 @@
+---
+title: "Replication of 'Sick Body, Vigilant Mind'"
+author: "Josh Tybur, Ben Jones, Lisa DeBruine"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: 4
+  html_notebook:
+    code_folding: show
+    toc: yes
+---
+
+```{r libraries, message=FALSE}
+library(TOSTER) # for equivalence tests
+library(afex) # for SPSS-style ANOVAs; also loads lme4 and lmerTest for LMEMs
+library(tidyverse) # for data wrangling
+```
+
+## Load and Process Data from Inquisit
+
+```{r load-data}
+dat.raw <- read_tsv("../Dot_Probe_raw.dat")
+```
+
+```{r get-trials}
+trials <- dat.raw %>%
+  mutate(
+    stim_id = str_replace(stimulusitem3, ".bmp", ""),
+    target = str_replace(stimulusitem5, ".bmp", "")
+  ) %>%
+  select(-(stimulusitem1:stimulusitem5)) %>%
+  filter(blockcode != "practice") %>%
+  separate(trialcode, c("real", "position", "trial_type", "block")) %>%
+  separate(stim_id, c("w", "face_sex", "face_type", "face_n"), sep = c(1, 2,3), remove = F) %>%
+  select(-real, -w, -face_n) %>%
+  mutate( # circle = 18, square = 23
+    correct = case_when(
+      target == "circle" & response == 18 ~ 1,
+      target == "square" & response == 23 ~ 1,
+      TRUE ~ 0
+    ),
+    face_type = recode(face_type, "d" = "disfigured", "n" = "normal")
+  ) %>%
+  rename(rt = latency, user_id = subject)
+```
+
+
+### Simulate Raters
+
+* recency (4 items) Illness recency
+* PVDpi (7 items) Perceived infectability subscale of PVD
+* PVDga (7 items) Germ aversion subscale of PVD
+* pd (7 items) Pathogen disgust subscale of TDDS
+* img (7 items) Pathogen images from Curtis
+
+```{r sim-raters}
+
+n <- 300 #original = 96
+
+raters <- tibble(
+  user_id = 1:n,
+  sex = c(rep("male", ceiling(36/96*n)), 
+          rep("female", floor(60/96*n))
+          ),
+  age = sample(18:30, n, replace = T),
+  # distrubute so ~28% are recently ill
+  recent_cold = sample(1:7, n, replace = T, 
+                       prob = c(.05, .10, .13, .44, .13, .10, .05)),
+  recency_1 = sample(1:7, n, replace = T),
+  recency_2 = sample(1:7, n, replace = T),
+  recency_3 = sample(1:7, n, replace = T),
+  recency_4 = sample(1:7, n, replace = T),
+  PVDpi_1 = sample(0:6, n, replace = T),
+  PVDpi_2 = sample(0:6, n, replace = T),
+  PVDpi_3 = sample(0:6, n, replace = T),
+  PVDpi_4 = sample(0:6, n, replace = T),
+  PVDpi_5 = sample(0:6, n, replace = T),
+  PVDpi_6 = sample(0:6, n, replace = T),
+  PVDpi_7 = sample(0:6, n, replace = T),
+  PVDga_1 = sample(0:6, n, replace = T),
+  PVDga_2 = sample(0:6, n, replace = T),
+  PVDga_3 = sample(0:6, n, replace = T),
+  PVDga_4 = sample(0:6, n, replace = T),
+  PVDga_5 = sample(0:6, n, replace = T),
+  PVDga_6 = sample(0:6, n, replace = T),
+  PVDga_7 = sample(0:6, n, replace = T),
+  PVDga_8 = sample(0:6, n, replace = T),
+  pd_1 = sample(0:6, n, replace = T),
+  pd_2 = sample(0:6, n, replace = T),
+  pd_3 = sample(0:6, n, replace = T),
+  pd_4 = sample(0:6, n, replace = T),
+  pd_5 = sample(0:6, n, replace = T),
+  pd_6 = sample(0:6, n, replace = T),
+  pd_7 = sample(0:6, n, replace = T),
+  img_1 = sample(1:7, n, replace = T),
+  img_2 = sample(1:7, n, replace = T),
+  img_3 = sample(1:7, n, replace = T),
+  img_4 = sample(1:7, n, replace = T),
+  img_5 = sample(1:7, n, replace = T),
+  img_6 = sample(1:7, n, replace = T),
+  img_7 = sample(1:7, n, replace = T),
+  img_8 = sample(1:7, n, replace = T)
+) 
+
+```
+
+### Recode
+
+```{r recode-raters}
+
+raters_coded <- raters %>%
+  mutate(
+    recent_cold = case_when(
+      recent_cold %in% 1:3 ~ "recent",
+      recent_cold %in% 4:7 ~ "not recent"
+    )
+  ) %>%
+  gather(var, score, recency_1:img_8) %>%
+  separate(var, c("var", "var_n")) %>%
+  group_by(user_id, sex, age, recent_cold, var) %>%
+  summarise(score = mean(score)) %>%
+  ungroup() %>%
+  spread(var, score)
+  
+```
+
+### Simulate Trials
+
+```{r sim-trials}
+trials <- expand.grid(
+  user_id = 1:n,
+  trial = 1:80
+) %>%
+  mutate(
+    trial_type = ifelse(trial <= 80*.4, "same", "diff"),
+    face_type = as.factor(ifelse(trial%%2 == 0, "disfigured", "normal")),
+    correct = sample(0:1, nrow(.), replace = T, prob = c(.1, .9)),
+    rt = rnorm(nrow(.), 620, 160) # approx mean & sd from SBVM
+  )
+```
+
+### Exclusions
+
+"Trials with incorrect categorization responses and trials with latencies greater than 3 standard deviations above or below a participant's mean latency were excluded. Two participants had high error rates (> 3 SD above the mean) and were excluded." (Miller & Maner)
+
+```{r exclusions}
+
+trials_inc <- trials %>%
+  filter(correct == 1, trial_type == "diff") %>%
+  group_by(user_id) %>%
+  mutate(mean_rt = mean(rt),
+         sd_rt = sd(rt),
+         n_correct = n()) %>%
+  filter(rt <= mean_rt + 3*sd_rt, rt >= mean_rt - 3*sd_rt) %>%
+  ungroup() %>%
+  group_by() %>%
+  filter(n_correct >= mean(n_correct) - 3*sd(n_correct)) %>%
+  ungroup()
+  
+```
+
+### Join Data
+
+```{r join-data}
+
+# centre and scale continuous scores from only included raters
+raters_inc <- raters_coded %>%
+  semi_join(trials_inc, by = "user_id") %>%
+  mutate(
+    recent_cold = as.factor(recent_cold),
+    recency.z = (recency - mean(recency)) / sd(recency),
+    PVDga.z = (PVDga - mean(PVDga)) / sd(PVDga),
+    PVDpi.z = (PVDpi - mean(PVDpi)) / sd(PVDpi)
+  )
+
+data_agg <- trials_inc %>%
+  group_by(user_id, face_type) %>%
+  summarise(rt = mean(rt)) %>%
+  ungroup() %>%
+  left_join(raters_inc, by = "user_id")
+
+```
+
+
+## Descriptives
+
+### Demographics
+```{r demog}
+raters_coded %>%
+  group_by(sex) %>%
+  summarise(
+    n = n(),
+    mean_age = mean(age, na.rm = T),
+    sd_age = sd(age, na.rm = T)
+  ) %>%
+  bind_rows(raters_coded %>%
+    group_by() %>%
+    summarise(
+      n = n(),
+      mean_age = mean(age, na.rm = T),
+      sd_age = sd(age, na.rm = T)
+    ) %>%
+    mutate(sex = "TOTAL")
+  ) %>%
+  mutate_if(is.numeric, round, 2)
+```
+
+### Included trials
+
+```{r included-trials}
+trials_inc %>%
+  group_by(user_id, face_type) %>%
+  summarise(included_trials = n()) %>%
+  group_by(face_type) %>%
+  summarise(n = n(),
+            mean = mean(included_trials),
+            min = min(included_trials),
+            max = max(included_trials)
+  ) %>%
+  mutate_if(is.numeric, round, 2)
+  
+```
+
+### RTs by trial
+
+```{r trial-rt-plot}
+trials_inc %>%
+  ggplot(aes(rt, color = face_type, group = as.factor(trial))) +
+  geom_density() +
+  scale_color_manual(values = c("#CC0000", "#006699"), name = "Face Type") +
+  theme_minimal()
+```
+
+### Illness Variables
+
+```{r illness-plot}
+raters_coded %>%
+  gather(variable, score, recency, PVDga, PVDpi) %>%
+  ggplot(aes(score, color = variable)) +
+  geom_density()
+```
+
+
+### Face Type by Recent Cold
+```{r facetype-recency-table}
+data_agg %>%
+  group_by(face_type, recent_cold) %>%
+  summarise(n = n(),
+            mean = mean(rt),
+            sd = sd(rt)
+  ) %>%
+  mutate_if(is.numeric, round, 3)
+```
+
+```{r facetype-recency-plot}
+ggplot(data_agg, aes(recent_cold, rt, color = face_type)) +
+  geom_violin(aes(fill = face_type), alpha = 0.25) +
+  geom_boxplot(width = 0.2, outlier.size = 0,
+               position = position_dodge(width = 0.9),
+               show.legend = F) +
+  labs(x = "Recency of Cold",
+       y = "Mean RT on Attentional Shift Trials") +
+  scale_color_manual(values = c("#CC0000", "#006699"), name = "Face Type") +
+  scale_fill_manual(values = c("#CC0000", "#006699"), guide = F) +
+  theme_minimal()
+```
+
+
+## Analyses
+
+### Reaction Time DV
+
+#### Analysis 1A: Categorical illness recency
+```{r analysis-1a}
+
+cat_ANOVA <- aov_4(rt ~ recent_cold * face_type + 
+                     (1 + face_type | user_id), 
+              data = data_agg, factorize = FALSE)
+
+anova(cat_ANOVA, es = "pes", MSE = FALSE)
+
+```
+
+#### Analysis 1B: Recent illness
+```{r analysis-1b}
+
+recent_ill <- filter(data_agg, recent_cold == "recent")
+t.test(recent_ill$rt~recent_ill$face_type)
+
+```
+
+#### Analysis 1C: Non-Recent illness
+```{r analysis-1c}
+
+not_recent_ill <- filter(data_agg, recent_cold == "not recent")
+t.test(not_recent_ill$rt~not_recent_ill$face_type)
+
+```
+
+#### Analysis 1D: Equivalence Tests
+
+```{r}
+stats_cat <- data_agg %>%
+  spread(face_type, rt, convert = T) %>%
+  mutate(dv = disfigured - normal) %>%
+  group_by(recent_cold) %>%
+  summarise(n = n(),
+            m = mean(dv),
+            sd = sd(dv)
+  )
+
+n1 <- stats_cat %>% filter(recent_cold == "not recent") %>% pull(n)
+n2 <- stats_cat %>% filter(recent_cold == "recent") %>% pull(n)
+m1 <- stats_cat %>% filter(recent_cold == "not recent") %>% pull(m)
+m2 <- stats_cat %>% filter(recent_cold == "recent") %>% pull(m)
+sd1 <- stats_cat %>% filter(recent_cold == "not recent") %>% pull(sd)
+sd2 <- stats_cat %>% filter(recent_cold == "recent") %>% pull(sd)
+low_eqbound_dz <- -.35
+high_eqbound_dz <- .35
+
+TOSTtwo(m1, m2, sd1, sd2, n1, n2, low_eqbound_dz, high_eqbound_dz)
+```
+
+
+### Continuous illness recency
+
+```{r analysis-1a-continuous}
+
+cont_ANOVA <- aov_4(rt ~ recency.z * face_type + 
+                      (1 + face_type | user_id), 
+              data = data_agg, factorize = FALSE)
+
+anova(cont_ANOVA, es = "pes", MSE = FALSE)
+
+```
+
+
+### Self-report Measures
+
+Difference in PVD between recently ill and non-recently ill groups
+
+#### Analysis 2A: Perceived Infectability
+```{r diff-PVDpi}
+t.test(data_agg$PVDpi~data_agg$recent_cold)
+```
+
+#### Analysis 2B: Germ Aversion
+```{r diff-PVDga}
+t.test(data_agg$PVDga~data_agg$recent_cold)
+```
+
+#### Analysis 2C: TDDS
+```{r diff-pd}
+t.test(data_agg$pd~data_agg$recent_cold)
+```
+
+#### Analysis 2D: Curtis Images
+```{r diff-img}
+t.test(data_agg$img~data_agg$recent_cold)
+```
