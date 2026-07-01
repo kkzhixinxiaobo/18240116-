@@ -12,3 +12,15 @@ __MACOSX/
 # R plots (auto-generated)
 Rplots.pdf
 Rplot*.png
+
+# Large binary data files
+*.sav
+*.iqdat
+*.dat
+*.zip
+
+# Generated HTML outputs (reproducible from .Rmd)
+*.html
+
+# Auto-generated R figure output
+复现工作/data_export_files/
